@@ -1,0 +1,38 @@
+# udev rules for SteelSeries keyboards with OLED displays
+# Place this file in /etc/udev/rules.d/
+# Then reload rules: sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# SteelSeries Vendor ID
+# Allows non-root access to HID devices for OLED control
+
+# Apex Pro
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1610", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1610", MODE="0666"
+
+# Apex 7
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1612", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1612", MODE="0666"
+
+# Apex Pro TKL
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1614", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1614", MODE="0666"
+
+# Apex 7 TKL
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1618", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1618", MODE="0666"
+
+# Apex 5
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="161c", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="161c", MODE="0666"
+
+# Apex Pro TKL (2023)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1628", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1628", MODE="0666"
+
+# Apex Pro TKL Gen 3
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1642", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1642", MODE="0666"
+
+# Apex Pro TKL Wireless Gen 3
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1644", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1644", MODE="0666"

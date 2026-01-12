@@ -1,0 +1,79 @@
+name: Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: steelseries.exe
+            asset_name: steelseries-windows-x64.exe
+          - os: macos-latest
+            artifact_name: steelseries
+            asset_name: steelseries-macos-x64
+          - os: macos-14
+            artifact_name: steelseries
+            asset_name: steelseries-macos-arm64
+          - os: ubuntu-latest
+            artifact_name: steelseries
+            asset_name: steelseries-linux-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "pyinstaller>=6.17.0" "hidapi>=0.15.0" "pillow>=12.1.0" "psutil>=7.0.0" "nvidia-ml-py>=13.590.44" "requests>=2.32.5"
+
+      - name: Build executable
+        run: |
+          pyinstaller steelseries.spec
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.artifact_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/steelseries-windows-x64.exe/steelseries.exe
+            artifacts/steelseries-macos-x64/steelseries
+            artifacts/steelseries-macos-arm64/steelseries
+            artifacts/steelseries-linux-x64/steelseries
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
