@@ -1,0 +1,43 @@
+# Normalize all text files to LF
+* text=auto eol=lf
+
+# Python
+*.py text eol=lf
+*.pyi text eol=lf
+*.pyw text eol=lf
+*.spec text eol=lf
+
+# Config
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+
+# Shell/Unix (must be LF)
+*.sh text eol=lf
+*.rules text eol=lf
+
+# Lock files
+*.lock text eol=lf
+
+# Fonts - binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Images - binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.svg binary
