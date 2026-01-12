@@ -76,14 +76,14 @@ jobs:
             smoke_cmd: ./dist/steelseries.exe --version
 
           # macOS Intel
-          - os: macos-13  # Intel runner
+          - os: macos-15-intel
             name: macOS Intel
             artifact_name: steelseries
             asset_name: steelseries-${{ needs.prepare.outputs.version }}-macos-x64
             smoke_cmd: ./dist/steelseries --version
 
           # macOS Apple Silicon
-          - os: macos-14  # ARM64 runner
+          - os: macos-15
             name: macOS ARM64
             artifact_name: steelseries
             asset_name: steelseries-${{ needs.prepare.outputs.version }}-macos-arm64
