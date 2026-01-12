@@ -8,6 +8,7 @@ Supports multiple backends:
 The backend is auto-detected based on hardware and SteelSeries GG availability.
 """
 
+import logging
 import time
 from pathlib import Path
 
@@ -15,7 +16,13 @@ import psutil
 
 from steelseries_oled._signal import interruptible
 from steelseries_oled.backends import BackendType, create_backend
+from steelseries_oled.exceptions import DeviceCommunicationError
 from steelseries_oled.models import SystemStats
+
+logger = logging.getLogger(__name__)
+
+# Maximum consecutive failures before exiting
+MAX_CONSECUTIVE_FAILURES = 5
 
 
 class _NetworkRateTracker:
@@ -81,16 +88,22 @@ class _Capabilities:
         """Check if NVIDIA GPU is available via NVML."""
         try:
             from pynvml import (  # noqa: PLC0415
+                NVMLError,
                 nvmlDeviceGetCount,
                 nvmlInit,
                 nvmlShutdown,
             )
+        except ImportError:
+            return False
 
+        try:
             nvmlInit()
-            count: int = nvmlDeviceGetCount()
-            nvmlShutdown()
-            return count > 0
-        except Exception:
+            try:
+                count: int = nvmlDeviceGetCount()
+                return count > 0
+            finally:
+                nvmlShutdown()
+        except NVMLError:
             return False
 
 
@@ -119,20 +132,27 @@ def _get_gpu_stats() -> tuple[float, float] | None:
     try:
         from pynvml import (  # noqa: PLC0415
             NVML_TEMPERATURE_GPU,
+            NVMLError,
             nvmlDeviceGetHandleByIndex,
             nvmlDeviceGetTemperature,
             nvmlDeviceGetUtilizationRates,
             nvmlInit,
             nvmlShutdown,
         )
+    except ImportError:
+        return None
 
+    try:
         nvmlInit()
-        handle = nvmlDeviceGetHandleByIndex(0)
-        util = nvmlDeviceGetUtilizationRates(handle)
-        temp = nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU)
-        nvmlShutdown()
-        return float(util.gpu), float(temp)
-    except Exception:
+        try:
+            handle = nvmlDeviceGetHandleByIndex(0)
+            util = nvmlDeviceGetUtilizationRates(handle)
+            temp = nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU)
+            return float(util.gpu), float(temp)
+        finally:
+            nvmlShutdown()
+    except NVMLError as e:
+        logger.debug("GPU stats unavailable: %s", e)
         return None
 
 
@@ -182,7 +202,7 @@ def display_stats(
     font_path: Path | None = None,
     update_interval: float = 1.0,
     backend: BackendType = BackendType.AUTO,
-) -> None:
+) -> bool:
     """Display live system statistics on the OLED.
 
     Shows adaptive stats based on detected hardware:
@@ -197,6 +217,10 @@ def display_stats(
         font_path: Path to TrueType font file (HID backends only).
         update_interval: Seconds between updates.
         backend: Which backend to use. AUTO will detect best option.
+
+    Returns:
+        True if exited normally (e.g., Ctrl+C), False if device became
+        unresponsive after MAX_CONSECUTIVE_FAILURES.
 
     Raises:
         DeviceNotFoundError: If no compatible device is found and
@@ -218,10 +242,29 @@ def display_stats(
     # Prime the CPU percent measurement (first call always returns 0)
     psutil.cpu_percent(percpu=True)
 
+    consecutive_failures = 0
+
     with interruptible() as is_running, stats_backend:
         while is_running():
-            stats = _gather_stats(caps, net_tracker)
-            stats_backend.update_stats(stats)
+            try:
+                stats = _gather_stats(caps, net_tracker)
+                stats_backend.update_stats(stats)
+                consecutive_failures = 0
+            except DeviceCommunicationError as e:
+                consecutive_failures += 1
+                logger.warning(
+                    "Update failed (%d/%d): %s",
+                    consecutive_failures,
+                    MAX_CONSECUTIVE_FAILURES,
+                    e,
+                )
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    print(
+                        f"Device unresponsive after {MAX_CONSECUTIVE_FAILURES} "
+                        "consecutive failures. Exiting.",
+                    )
+                    return False
             time.sleep(update_interval)
 
     print()
+    return True

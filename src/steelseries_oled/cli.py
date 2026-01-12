@@ -1,6 +1,7 @@
 """Command-line interface for SteelSeries OLED tools."""
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -137,12 +138,12 @@ def cmd_stats(args: argparse.Namespace) -> int:
     backend = backend_map[args.backend]
 
     try:
-        display_stats(
+        success = display_stats(
             font_path=args.font,
             update_interval=args.interval,
             backend=backend,
         )
-        return 0
+        return 0 if success else 1
 
     except DeviceNotFoundError:
         print("Error: No compatible SteelSeries device found.", file=sys.stderr)
@@ -182,6 +183,9 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """Main entry point with subcommands."""
+    # Configure logging for warnings from library modules
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+
     # Use RawDescriptionHelpFormatter to preserve epilog formatting
     parser = argparse.ArgumentParser(
         prog="steelseries",

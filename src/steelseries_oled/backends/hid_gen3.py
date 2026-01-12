@@ -18,6 +18,7 @@ Bitmap Layout (SSD1306-style):
 """
 
 import contextlib
+import logging
 from importlib.resources import as_file, files
 from pathlib import Path
 from types import TracebackType
@@ -30,6 +31,8 @@ from steelseries_oled.backends.base import StatsBackend
 from steelseries_oled.constants import GEN3_PIDS, OLED_HEIGHT, OLED_WIDTH, VENDOR_ID
 from steelseries_oled.exceptions import DeviceCommunicationError, DeviceNotFoundError
 from steelseries_oled.models import SystemStats, format_rate
+
+logger = logging.getLogger(__name__)
 
 # Gen3 protocol constants
 GEN3_HEADER = bytes([0x1F, 0x81])  # Custom bitmap mode
@@ -199,7 +202,8 @@ class HIDGen3Backend(StatsBackend):
         try:
             result: int = self._device.send_feature_report(report)
             return result > 0
-        except OSError:
+        except OSError as e:
+            logger.debug("Failed to send bitmap: %s", e)
             return False
 
     def _image_to_gen3_bitmap(self, image: Image.Image) -> bytes:
