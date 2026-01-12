@@ -3,11 +3,31 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/release.yml'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Cancel in-progress runs on new commits
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.14'
+  UV_SYSTEM_PYTHON: 1
 
 jobs:
+  # ==========================================================================
+  # Linting and Type Checking
+  # ==========================================================================
   lint:
+    name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,44 +35,111 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14'
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-lint-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-lint-${{ runner.os }}-
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy types-requests
+        run: uv sync --group dev
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: uv run ruff check src/ tests/
 
-      - name: Format check with ruff
-        run: ruff format --check src/ tests/
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
 
       - name: Type check with mypy
-        run: mypy src/
+        run: uv run mypy src/
 
+  # ==========================================================================
+  # Testing
+  # ==========================================================================
   test:
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.14']
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/Library/Caches/uv
+            ~\AppData\Local\uv\cache
+          key: uv-test-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-test-${{ runner.os }}-
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install "pytest>=9.0.0" "pytest-cov>=7.0.0" "hidapi>=0.15.0" "pillow>=12.1.0" "psutil>=7.0.0" "nvidia-ml-py>=13.590.44" "requests>=2.32.5"
-
-      - name: Install package
-        run: pip install -e .
+        run: uv sync --group test
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short --cov --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+
+  # ==========================================================================
+  # Build verification (ensure exe builds work before release)
+  # ==========================================================================
+  build-check:
+    name: Build Check (Windows)
+    runs-on: windows-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\uv\cache
+          key: uv-build-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-build-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Build executable
+        run: uv run pyinstaller steelseries.spec --noconfirm
+
+      - name: Smoke test
+        run: .\dist\steelseries.exe --version
