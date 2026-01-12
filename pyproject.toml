@@ -140,7 +140,7 @@ warn_no_return = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["hid.*", "psutil.*", "pynvml.*"]
+module = ["hid.*", "psutil.*", "pynvml.*", "PIL", "PIL.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

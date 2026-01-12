@@ -40,5 +40,5 @@ def interruptible() -> Generator[Callable[[], bool]]:
     finally:
         # Restore original handlers
         signal.signal(signal.SIGINT, old_sigint)
-        if old_sigterm is not None:
-            signal.signal(signal.SIGTERM, old_sigterm)  # type: ignore[unreachable]
+        if sys.platform != "win32" and old_sigterm is not None:
+            signal.signal(signal.SIGTERM, old_sigterm)

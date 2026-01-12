@@ -1,0 +1,309 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (build only, no release)'
+        type: boolean
+        default: false
+
+# Ensure only one release workflow runs at a time
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  id-token: write  # For attestation
+  attestations: write
+
+env:
+  PYTHON_VERSION: '3.13'  # Use stable Python for production builds
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  # ============================================================================
+  # Extract version from tag
+  # ============================================================================
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version_short: ${{ steps.version.outputs.version_short }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-dev.$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_short=${VERSION%%-*}" >> $GITHUB_OUTPUT
+
+          # Detect pre-release (alpha, beta, rc, dev)
+          if [[ "$VERSION" =~ (alpha|beta|rc|dev) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "📦 Version: $VERSION"
+
+  # ============================================================================
+  # Build executables for all platforms
+  # ============================================================================
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false  # Continue other builds if one fails
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            name: Windows x64
+            artifact_name: steelseries.exe
+            asset_name: steelseries-${{ needs.prepare.outputs.version }}-windows-x64.exe
+            smoke_cmd: ./dist/steelseries.exe --version
+
+          # macOS Intel
+          - os: macos-13  # Intel runner
+            name: macOS Intel
+            artifact_name: steelseries
+            asset_name: steelseries-${{ needs.prepare.outputs.version }}-macos-x64
+            smoke_cmd: ./dist/steelseries --version
+
+          # macOS Apple Silicon
+          - os: macos-14  # ARM64 runner
+            name: macOS ARM64
+            artifact_name: steelseries
+            asset_name: steelseries-${{ needs.prepare.outputs.version }}-macos-arm64
+            smoke_cmd: ./dist/steelseries --version
+
+          # Linux x64 (built on oldest Ubuntu for glibc compatibility)
+          - os: ubuntu-22.04
+            name: Linux x64
+            artifact_name: steelseries
+            asset_name: steelseries-${{ needs.prepare.outputs.version }}-linux-x64
+            smoke_cmd: ./dist/steelseries --version
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/Library/Caches/uv
+            ~\AppData\Local\uv\cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+
+      - name: Build executable
+        run: |
+          uv run pyinstaller steelseries.spec --noconfirm
+
+      - name: Smoke test executable
+        shell: bash
+        run: |
+          echo "🔥 Running smoke test..."
+          ${{ matrix.smoke_cmd }}
+          echo "✅ Smoke test passed"
+
+      - name: Get executable size
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            SIZE=$(stat -c%s "dist/${{ matrix.artifact_name }}" 2>/dev/null || powershell -Command "(Get-Item 'dist/${{ matrix.artifact_name }}').Length")
+          else
+            SIZE=$(stat -f%z "dist/${{ matrix.artifact_name }}" 2>/dev/null || stat -c%s "dist/${{ matrix.artifact_name }}")
+          fi
+          SIZE_MB=$(awk -v bytes="$SIZE" 'BEGIN {printf "%.2f", bytes/1048576}')
+          echo "📦 Executable size: ${SIZE_MB} MB"
+
+      - name: Rename artifact with version
+        shell: bash
+        run: |
+          mkdir -p release
+          cp "dist/${{ matrix.artifact_name }}" "release/${{ matrix.asset_name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: release/${{ matrix.asset_name }}
+          retention-days: 30
+          if-no-files-found: error
+
+  # ============================================================================
+  # Create checksums
+  # ============================================================================
+  checksums:
+    name: Generate Checksums
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.checksum.outputs.sha256 }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        id: checksum
+        run: |
+          cd artifacts
+          echo "📋 Generating SHA256 checksums..."
+          sha256sum * | tee checksums-sha256.txt
+          echo "sha256=$(cat checksums-sha256.txt | base64 -w0)" >> $GITHUB_OUTPUT
+
+      - name: Upload checksum file
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: artifacts/checksums-sha256.txt
+          retention-days: 30
+
+  # ============================================================================
+  # Create GitHub Release
+  # ============================================================================
+  release:
+    name: Create Release
+    needs: [prepare, build, checksums]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag' && !inputs.dry_run
+    steps:
+      - name: Checkout (for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Display artifacts
+        run: |
+          echo "📦 Release artifacts:"
+          ls -lah release/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release_notes.md << 'NOTES_EOF'
+          ## Installation
+
+          Download the appropriate executable for your platform:
+
+          | Platform | File | Architecture |
+          |----------|------|--------------|
+          | Windows | `steelseries-${{ needs.prepare.outputs.version }}-windows-x64.exe` | x64 |
+          | macOS | `steelseries-${{ needs.prepare.outputs.version }}-macos-x64` | Intel |
+          | macOS | `steelseries-${{ needs.prepare.outputs.version }}-macos-arm64` | Apple Silicon |
+          | Linux | `steelseries-${{ needs.prepare.outputs.version }}-linux-x64` | x64 |
+
+          ### Linux Compatibility
+          The Linux binary is built on Ubuntu 22.04 (glibc 2.35) and should work on:
+          - Ubuntu 22.04+, Debian 12+, Fedora 37+, Arch Linux (rolling)
+
+          ### Verification
+          Verify your download with SHA256 checksums in `checksums-sha256.txt`.
+
+          ```bash
+          # Linux/macOS
+          sha256sum -c checksums-sha256.txt
+
+          # Windows (PowerShell)
+          Get-FileHash steelseries-*.exe | Format-List
+          ```
+
+          ---
+
+          NOTES_EOF
+
+          echo "Generated release notes"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ needs.prepare.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          generate_release_notes: true
+          append_body: true
+          prerelease: ${{ needs.prepare.outputs.is_prerelease }}
+          files: |
+            release/steelseries-*
+            release/checksums-sha256.txt
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'release/steelseries-*'
+
+  # ============================================================================
+  # Summary
+  # ============================================================================
+  summary:
+    name: Release Summary
+    needs: [prepare, build, checksums, release]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## 📦 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ needs.prepare.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pre-release | ${{ needs.prepare.outputs.is_prerelease }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry Run | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "✅ **Build:** All platforms built successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build:** Some platforms failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "${{ needs.release.result }}" == "success" ]]; then
+            echo "✅ **Release:** Published to GitHub Releases" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.release.result }}" == "skipped" ]]; then
+            echo "⏭️ **Release:** Skipped (dry run or not a tag)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Release:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
