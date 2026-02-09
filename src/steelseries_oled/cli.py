@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from steelseries_oled import __version__
+from steelseries_oled._windowless import is_windowless, redirect_streams
 from steelseries_oled.backends import BackendType
 from steelseries_oled.device import open_device
 from steelseries_oled.display import display_image
@@ -183,8 +184,17 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """Main entry point with subcommands."""
+    redirect_streams()
+
     # Configure logging for warnings from library modules
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+    if is_windowless():
+        logging.basicConfig(
+            level=logging.WARNING,
+            format="%(asctime)s %(levelname)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    else:
+        logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     # Use RawDescriptionHelpFormatter to preserve epilog formatting
     parser = argparse.ArgumentParser(
