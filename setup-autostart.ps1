@@ -33,7 +33,6 @@ $ErrorActionPreference = 'Stop'
 
 #region Configuration
 $TaskName = "SteelSeriesOLED"
-$LauncherName = "steelseries-launcher.vbs"
 $RestartCount = 3
 $RestartIntervalMinutes = 1
 #endregion
@@ -46,14 +45,14 @@ SteelSeries OLED Auto-Start Setup
 USAGE
   .\setup-autostart.ps1              Install (runs at next login)
   .\setup-autostart.ps1 -StartNow    Install and start now
-  .\setup-autostart.ps1 -Uninstall   Remove task and launcher
+  .\setup-autostart.ps1 -Uninstall   Remove scheduled task
 
 OPTIONS
   -ExePath <path>    Custom exe path (default: dist\steelseries.exe)
   -h, -?             Show this help
 
 NOTES
-  Requires Administrator. Task runs hidden with auto-restart on crash.
+  Requires Administrator. Task runs the exe directly with auto-restart on crash.
 "@
     exit 0
 }
@@ -80,43 +79,13 @@ function Remove-ExistingTask {
     return $false
 }
 
-function Remove-LauncherScript {
-    param([string]$Path, [switch]$Silent)
+function Remove-LegacyLauncher {
+    param([string]$Dir)
 
-    if (Test-Path $Path) {
-        try {
-            Remove-Item $Path -Force -ErrorAction Stop
-            if (-not $Silent) {
-                Write-Host "Removed launcher: $Path" -ForegroundColor Green
-            }
-            return $true
-        } catch {
-            Write-Warning "Failed to remove launcher: $_"
-            return $false
-        }
-    }
-    return $false
-}
-
-function New-LauncherScript {
-    param([string]$ExePath, [string]$LauncherPath)
-
-    # VBS script that runs the exe completely hidden (window style 0)
-    # Escape quotes in path for VBS string (defensive, though Windows disallows " in paths)
-    $escapedPath = $ExePath -replace '"', '""'
-    $vbsContent = @"
-' SteelSeries OLED Stats Launcher
-' This script runs steelseries.exe completely hidden (no window)
-Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """$escapedPath"" stats", 0, False
-"@
-
-    try {
-        Set-Content -Path $LauncherPath -Value $vbsContent -Encoding ASCII -ErrorAction Stop
-        return $true
-    } catch {
-        Write-Warning "Failed to create launcher: $_"
-        return $false
+    $legacyLauncher = Join-Path $Dir "steelseries-launcher.vbs"
+    if (Test-Path $legacyLauncher) {
+        Remove-Item $legacyLauncher -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed legacy VBS launcher" -ForegroundColor Yellow
     }
 }
 #endregion
@@ -129,7 +98,6 @@ if (-not $ExePath) {
     $ExePath = Join-Path $ScriptDir "dist\steelseries.exe"
 }
 
-# For uninstall, we need the launcher path even if exe doesn't exist
 # Ensure WorkDir is always absolute (handles relative default path)
 $WorkDir = if (Test-Path $ExePath) {
     Split-Path (Resolve-Path $ExePath).Path -Parent
@@ -141,16 +109,15 @@ $WorkDir = if (Test-Path $ExePath) {
         Join-Path $PWD.Path $parentPath
     }
 }
-$LauncherPath = Join-Path $WorkDir $LauncherName
 #endregion
 
 #region Uninstall
 if ($Uninstall) {
     $taskRemoved = Remove-ExistingTask -Name $TaskName
-    $launcherRemoved = Remove-LauncherScript -Path $LauncherPath
+    Remove-LegacyLauncher -Dir $WorkDir
 
-    if (-not $taskRemoved -and -not $launcherRemoved) {
-        Write-Host "Nothing to uninstall: task and launcher not found" -ForegroundColor Yellow
+    if (-not $taskRemoved) {
+        Write-Host "Nothing to uninstall: task not found" -ForegroundColor Yellow
     }
     exit 0
 }
@@ -165,7 +132,6 @@ if (-not (Test-Path $ExePath)) {
 
 $ExePath = (Resolve-Path $ExePath).Path
 $WorkDir = Split-Path $ExePath -Parent
-$LauncherPath = Join-Path $WorkDir $LauncherName
 #endregion
 
 #region Install
@@ -174,16 +140,13 @@ if (Remove-ExistingTask -Name $TaskName -Silent) {
     Write-Host "Removed existing task" -ForegroundColor Yellow
 }
 
-# Create VBS launcher for truly hidden execution
-if (-not (New-LauncherScript -ExePath $ExePath -LauncherPath $LauncherPath)) {
-    Write-Host "Error: Failed to create launcher script" -ForegroundColor Red
-    exit 1
-}
+# Clean up VBS launcher from previous versions
+Remove-LegacyLauncher -Dir $WorkDir
 
-# Create scheduled task that runs the VBS launcher
+# Create scheduled task that runs the exe directly
 $Action = New-ScheduledTaskAction `
-    -Execute "wscript.exe" `
-    -Argument "//nologo //B `"$LauncherPath`"" `
+    -Execute $ExePath `
+    -Argument "stats" `
     -WorkingDirectory $WorkDir
 
 $Trigger = New-ScheduledTaskTrigger -AtLogon
@@ -201,15 +164,12 @@ try {
 } catch {
     Write-Host "Error: Failed to create scheduled task: $_" -ForegroundColor Red
     Write-Host "Try running as Administrator if permission denied." -ForegroundColor Yellow
-    # Clean up launcher on failure
-    Remove-LauncherScript -Path $LauncherPath -Silent
     exit 1
 }
 
 Write-Host "Created scheduled task: $TaskName" -ForegroundColor Green
 Write-Host "  Executable: $ExePath" -ForegroundColor Cyan
-Write-Host "  Launcher:   $LauncherPath" -ForegroundColor Cyan
-Write-Host "  Trigger:    At logon (hidden)" -ForegroundColor Cyan
+Write-Host "  Trigger:    At logon" -ForegroundColor Cyan
 Write-Host ""
 
 if ($StartNow) {
