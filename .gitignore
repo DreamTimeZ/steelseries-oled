@@ -22,6 +22,9 @@ dist/
 *.egg-info/
 build/
 
+# Packet captures (reverse-engineering data)
+data/
+
 # IDE
 .idea/
 .vscode/
