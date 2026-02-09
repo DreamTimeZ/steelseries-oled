@@ -76,6 +76,8 @@ uv run pyinstaller steelseries.spec
 # Output: dist/steelseries (or dist/steelseries.exe on Windows)
 ```
 
+The Windows exe is built windowless (`console=False`) for headless use via scheduled task or `start-stats.ps1`. Use `uv run steelseries` for interactive commands (`oled`, `profile`, `--help`).
+
 **Automated releases:** Pushing a version tag (e.g., `v1.0.0`) triggers GitHub Actions to build executables for Windows x64, macOS x64, macOS ARM64, and Linux x64. Download from [Releases](https://github.com/DreamTimeZ/steelseries-oled/releases). Each release includes SHA256 checksums in `checksums-sha256.txt` for verification.
 
 ## Development

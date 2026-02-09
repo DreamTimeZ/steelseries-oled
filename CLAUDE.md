@@ -54,6 +54,7 @@ steelseries-oled/
 │   ├── __main__.py              # python -m steelseries_oled
 │   ├── py.typed                 # PEP 561 typed marker
 │   ├── _signal.py               # Signal handling utilities
+│   ├── _windowless.py           # Stream guard for windowless (no-console) builds
 │   ├── constants.py             # VID, PIDs, GEN3_PIDS, dimensions
 │   ├── exceptions.py            # Custom exceptions (incl. Gen3NotSupportedError)
 │   ├── device.py                # Device detection, Gen3 detection
