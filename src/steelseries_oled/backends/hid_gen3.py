@@ -115,11 +115,12 @@ class HIDGen3Backend(StatsBackend):
     ) -> None:
         """Close HID device connection."""
         if self._device is not None:
-            # Clear screen before closing
-            self._send_bitmap(bytes(GEN3_BITMAP_SIZE))
-            with contextlib.suppress(OSError):
-                self._device.close()
-            self._device = None
+            try:
+                self._send_bitmap(bytes(GEN3_BITMAP_SIZE))
+            finally:
+                with contextlib.suppress(OSError):
+                    self._device.close()
+                self._device = None
 
     def update_stats(self, stats: SystemStats) -> None:
         """Update the OLED display with rendered stats bitmap.
@@ -266,7 +267,7 @@ class HIDGen3Backend(StatsBackend):
         image = Image.new("1", (OLED_WIDTH, OLED_HEIGHT), color=0)
         draw = ImageDraw.Draw(image)
 
-        # Line 1: CPU + GPU (adaptive)
+        # Line 1: CPU + GPU (adaptive, may drop CPU temp if too wide)
         line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
         if stats.cpu_temp is not None:
             line1_parts.append(f"{stats.cpu_temp:.0f}C")
@@ -275,6 +276,19 @@ class HIDGen3Backend(StatsBackend):
             if stats.gpu_temp is not None:
                 line1_parts.append(f"{stats.gpu_temp:.0f}C")
         line1 = " ".join(line1_parts)
+        # Drop CPU temp (lowest priority) if line overflows display width
+        font = self._font
+        if (
+            font is not None
+            and font.getlength(line1) > OLED_WIDTH
+            and stats.cpu_temp is not None
+            and stats.gpu_percent is not None
+        ):
+            line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
+            line1_parts.append(f"G:{stats.gpu_percent:.0f}%")
+            if stats.gpu_temp is not None:
+                line1_parts.append(f"{stats.gpu_temp:.0f}C")
+            line1 = " ".join(line1_parts)
 
         # Line 2: RAM
         line2 = f"RAM:{stats.mem_used_gb:.1f}/{stats.mem_total_gb:.0f}GB"
