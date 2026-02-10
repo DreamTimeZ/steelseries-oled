@@ -33,7 +33,7 @@ from steelseries_oled.exceptions import (
 from steelseries_oled.profile import switch_profile
 from steelseries_oled.stats import display_stats
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "OLED_HEIGHT",
