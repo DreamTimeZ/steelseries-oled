@@ -6,7 +6,6 @@ Note:
     Use 'steelseries-stats' for Gen3 keyboards.
 """
 
-from time import sleep
 from typing import TYPE_CHECKING
 
 from PIL import Image, ImageSequence
@@ -99,7 +98,7 @@ def display_image(image_path: Path) -> None:
                 if not is_running():
                     break
                 device.send_image(frame_data)
-                sleep(sleep_time)
+                is_running.wait(sleep_time)
 
     print()  # Newline after Ctrl+C
 
@@ -118,6 +117,6 @@ def _display_frames(frames: Iterator[bytes], fps: float = 10.0) -> None:
             if not is_running():
                 break
             device.send_image(frame_data)
-            sleep(sleep_time)
+            is_running.wait(sleep_time)
 
     print()
