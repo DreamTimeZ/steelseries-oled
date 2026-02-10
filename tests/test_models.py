@@ -2,7 +2,7 @@
 
 import pytest
 
-from steelseries_oled.models import SystemStats, format_rate
+from steelseries_oled.models import SystemStats, build_stats_lines, format_rate
 
 
 class TestFormatRate:
@@ -151,3 +151,49 @@ class TestSystemStats:
         assert stats.cpu_temp == 65.0
         assert stats.gpu_percent == 80.0
         assert stats.gpu_temp == 70.0
+
+
+class TestBuildStatsLines:
+    """Tests for build_stats_lines function."""
+
+    def _make_stats(self, **kwargs: object) -> SystemStats:
+        defaults = dict(
+            cpu_percent=50.0,
+            mem_used_gb=8.0,
+            mem_total_gb=16.0,
+            net_up_bytes=1000.0,
+            net_down_bytes=5000.0,
+        )
+        defaults.update(kwargs)
+        return SystemStats(**defaults)  # type: ignore[arg-type]
+
+    def test_cpu_only(self) -> None:
+        """No optional fields: line1 should show only CPU."""
+        line1, line2, line3 = build_stats_lines(self._make_stats())
+        assert line1 == "C: 50%"
+        assert line2 == "RAM:8.0/16GB"
+        assert line3 == "D:5K U:1K"
+
+    def test_cpu_temp_only(self) -> None:
+        """With cpu_temp: line1 should append temperature."""
+        line1, _, _ = build_stats_lines(self._make_stats(cpu_temp=65.0))
+        assert line1 == "C: 50% 65C"
+
+    def test_gpu_no_temp(self) -> None:
+        """With gpu_percent but no gpu_temp."""
+        line1, _, _ = build_stats_lines(self._make_stats(gpu_percent=80.0))
+        assert line1 == "C: 50% G:80%"
+
+    def test_gpu_with_temp(self) -> None:
+        """With gpu_percent and gpu_temp."""
+        line1, _, _ = build_stats_lines(
+            self._make_stats(gpu_percent=80.0, gpu_temp=70.0)
+        )
+        assert line1 == "C: 50% G:80% 70C"
+
+    def test_all_fields(self) -> None:
+        """All optional fields present."""
+        line1, _, _ = build_stats_lines(
+            self._make_stats(cpu_temp=65.0, gpu_percent=80.0, gpu_temp=70.0)
+        )
+        assert line1 == "C: 50% 65C G:80% 70C"
