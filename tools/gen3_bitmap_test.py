@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test Gen3 OLED with correct protocol: 1f 81 + 642 bytes bitmap."""
 
+
 import hid
-import time
 
 VENDOR_ID = 0x1038
 GEN3_TKL_PID = 0x1642
@@ -18,8 +18,8 @@ def open_device():
     devices = hid.enumerate(VENDOR_ID, GEN3_TKL_PID)
     dev = hid.device()
     for d in devices:
-        if d['interface_number'] == 1:
-            dev.open_path(d['path'])
+        if d["interface_number"] == 1:
+            dev.open_path(d["path"])
             return dev
     return None
 

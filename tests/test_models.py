@@ -151,14 +151,13 @@ class TestBuildStatsLines:
     """Tests for build_stats_lines function."""
 
     def _make_stats(self, **kwargs: object) -> SystemStats:
-        defaults = dict(
-            cpu_percent=50.0,
-            mem_used_gb=8.0,
-            mem_total_gb=16.0,
-            net_up_bytes=1000.0,
-            net_down_bytes=5000.0,
-        )
-        defaults.update(kwargs)
+        defaults = {
+            "cpu_percent": 50.0,
+            "mem_used_gb": 8.0,
+            "mem_total_gb": 16.0,
+            "net_up_bytes": 1000.0,
+            "net_down_bytes": 5000.0,
+        } | kwargs
         return SystemStats(**defaults)  # type: ignore[arg-type]
 
     def test_cpu_only(self) -> None:
