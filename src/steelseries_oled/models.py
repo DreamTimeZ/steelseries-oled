@@ -13,7 +13,6 @@ class SystemStats:
 
     # CPU (always available)
     cpu_percent: float
-    cpu_max_core: float  # Highest single core usage (bottleneck detection)
 
     # Memory (always available)
     mem_used_gb: float

@@ -76,7 +76,7 @@ class TestSystemStats:
         """SystemStats should be immutable."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=1000.0,
@@ -89,7 +89,7 @@ class TestSystemStats:
         """mem_percent should calculate usage percentage."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=0.0,
@@ -101,7 +101,7 @@ class TestSystemStats:
         """mem_percent should return 0 if total is zero."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=0.0,
             net_up_bytes=0.0,
@@ -113,7 +113,7 @@ class TestSystemStats:
         """mem_percent should return 0 if total is negative (corrupted data)."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=-16.0,
             net_up_bytes=0.0,
@@ -125,7 +125,7 @@ class TestSystemStats:
         """Optional fields should default to None."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=0.0,
@@ -139,7 +139,7 @@ class TestSystemStats:
         """Optional fields should accept values."""
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=0.0,

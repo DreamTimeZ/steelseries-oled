@@ -98,7 +98,7 @@ backend = create_backend(BackendType.GAMESENSE)
 
 with backend:
     stats = SystemStats(
-        cpu_percent=50.0, cpu_max_core=55.0,
+        cpu_percent=50.0,
         mem_used_gb=12.0, mem_total_gb=32.0,
         net_up_bytes=1000.0, net_down_bytes=5000.0,
     )

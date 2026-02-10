@@ -88,7 +88,7 @@ class TestHIDGen3Backend:
         """Create sample SystemStats for testing."""
         return SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=1000.0,
@@ -270,7 +270,7 @@ class TestHIDBitmapBackend:
 
         stats = SystemStats(
             cpu_percent=50.0,
-            cpu_max_core=60.0,
+
             mem_used_gb=8.0,
             mem_total_gb=16.0,
             net_up_bytes=1000.0,
