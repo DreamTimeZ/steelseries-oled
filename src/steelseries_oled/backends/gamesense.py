@@ -69,6 +69,9 @@ def find_gamesense_address() -> tuple[str, int] | None:
                 address = data.get("address", "")
                 if ":" in address:
                     host, port_str = address.split(":", 1)
+                    if host not in ("127.0.0.1", "localhost"):
+                        logger.warning("Ignoring non-localhost address: %s", address)
+                        continue
                     return host, int(port_str)
             except (json.JSONDecodeError, ValueError, OSError) as e:
                 logger.debug("Failed to parse %s: %s", path, e)
@@ -113,12 +116,13 @@ class GameSenseBackend(StatsBackend):
         - 'requests' library installed
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, update_interval: float = 1.0) -> None:
         """Initialize the GameSense backend."""
         self._base_url: str | None = None
         self._registered = False
         self._req: Any = None
         self._session: Any = None
+        self._update_interval = update_interval
 
     @property
     def name(self) -> str:
@@ -151,8 +155,9 @@ class GameSenseBackend(StatsBackend):
                 )
                 raise DeviceCommunicationError(msg)
 
-            # Register game and bind event
+            # Register game, register event, and bind handler
             self._register_game()
+            self._register_stats_event()
             self._bind_stats_event()
             self._registered = True
 
@@ -246,7 +251,26 @@ class GameSenseBackend(StatsBackend):
                 "game": GAME_NAME,
                 "game_display_name": GAME_DISPLAY_NAME,
                 "developer": "steelseries-oled",
-                "deinitialize_timer_length_ms": 30000,
+                "deinitialize_timer_length_ms": max(
+                    30_000, int(self._update_interval * 3000)
+                ),
+            },
+        )
+
+    def _register_stats_event(self) -> None:
+        """Register the stats event with value_optional.
+
+        Setting value_optional ensures GameSense processes every event
+        even when the value field hasn't changed. Without this, GameSense
+        caches the value and suppresses handlers when it matches, which
+        prevents screen updates when CPU % is stable.
+        """
+        self._post(
+            "/register_game_event",
+            {
+                "game": GAME_NAME,
+                "event": EVENT_NAME,
+                "value_optional": True,
             },
         )
 
