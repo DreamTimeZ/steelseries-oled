@@ -109,6 +109,12 @@ Add your keyboard's Product ID (PID) to `SUPPORTED_PIDS` in `src/steelseries_ole
 Add-MpPreference -ExclusionProcess "C:\path\to\steelseries.exe"
 ```
 
+Verify the exclusion was added:
+
+```powershell
+Get-MpPreference | Select-Object -ExpandProperty ExclusionProcess
+```
+
 **GameSense timeout errors:** If `steelseries stats --backend gamesense` fails with a timeout error, restart SteelSeries GG completely. Check Task Manager (Windows) or Activity Monitor (macOS) for remaining SteelSeries processes and terminate them before restarting.
 
 ## License
