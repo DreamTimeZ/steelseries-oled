@@ -13,7 +13,7 @@ from typing import Any, Self
 
 from steelseries_oled.backends.base import StatsBackend
 from steelseries_oled.exceptions import DeviceCommunicationError, DeviceNotFoundError
-from steelseries_oled.models import SystemStats, format_rate
+from steelseries_oled.models import SystemStats, build_stats_lines
 
 try:
     import requests
@@ -196,23 +196,7 @@ class GameSenseBackend(StatsBackend):
             msg = "Backend not initialized"
             raise DeviceCommunicationError(msg)
 
-        # Line 1: CPU + GPU (adaptive)
-        line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
-        if stats.cpu_temp is not None:
-            line1_parts.append(f"{stats.cpu_temp:.0f}C")
-        if stats.gpu_percent is not None:
-            line1_parts.append(f"G:{stats.gpu_percent:.0f}%")
-            if stats.gpu_temp is not None:
-                line1_parts.append(f"{stats.gpu_temp:.0f}C")
-        line1 = " ".join(line1_parts)
-
-        # Line 2: RAM
-        line2 = f"RAM:{stats.mem_used_gb:.1f}/{stats.mem_total_gb:.0f}GB"
-
-        # Line 3: Network (download first - users care more about it)
-        up = format_rate(stats.net_up_bytes)
-        down = format_rate(stats.net_down_bytes)
-        line3 = f"D:{down} U:{up}"
+        line1, line2, line3 = build_stats_lines(stats)
 
         # Send stats event with frame data for multi-line display
         self._post(
@@ -251,6 +235,7 @@ class GameSenseBackend(StatsBackend):
                 "game": GAME_NAME,
                 "game_display_name": GAME_DISPLAY_NAME,
                 "developer": "steelseries-oled",
+                # 3x interval (in ms) gives headroom for slow updates
                 "deinitialize_timer_length_ms": max(
                     30_000, int(self._update_interval * 3000)
                 ),

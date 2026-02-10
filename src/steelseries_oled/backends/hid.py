@@ -16,7 +16,7 @@ from steelseries_oled.backends.base import StatsBackend
 from steelseries_oled.constants import OLED_HEIGHT, OLED_WIDTH
 from steelseries_oled.device import SteelSeriesDevice
 from steelseries_oled.exceptions import DeviceCommunicationError
-from steelseries_oled.models import SystemStats, format_rate
+from steelseries_oled.models import SystemStats, build_stats_lines
 
 
 class HIDBitmapBackend(StatsBackend):
@@ -109,15 +109,7 @@ class HIDBitmapBackend(StatsBackend):
         im = Image.new("1", (OLED_WIDTH, OLED_HEIGHT), color=0)
         draw = ImageDraw.Draw(im)
 
-        # Line 1: CPU + GPU (adaptive, may drop CPU temp if too wide)
-        line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
-        if stats.cpu_temp is not None:
-            line1_parts.append(f"{stats.cpu_temp:.0f}C")
-        if stats.gpu_percent is not None:
-            line1_parts.append(f"G:{stats.gpu_percent:.0f}%")
-            if stats.gpu_temp is not None:
-                line1_parts.append(f"{stats.gpu_temp:.0f}C")
-        line1 = " ".join(line1_parts)
+        line1, line2, line3 = build_stats_lines(stats)
         # Drop CPU temp (lowest priority) if line overflows display width
         font = self._font
         if (
@@ -126,19 +118,10 @@ class HIDBitmapBackend(StatsBackend):
             and stats.cpu_temp is not None
             and stats.gpu_percent is not None
         ):
-            line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
-            line1_parts.append(f"G:{stats.gpu_percent:.0f}%")
+            parts = [f"C:{stats.cpu_percent:3.0f}%", f"G:{stats.gpu_percent:.0f}%"]
             if stats.gpu_temp is not None:
-                line1_parts.append(f"{stats.gpu_temp:.0f}C")
-            line1 = " ".join(line1_parts)
-
-        # Line 2: RAM
-        line2 = f"RAM:{stats.mem_used_gb:.1f}/{stats.mem_total_gb:.0f}GB"
-
-        # Line 3: Network (download first - users care more about it)
-        up = format_rate(stats.net_up_bytes)
-        down = format_rate(stats.net_down_bytes)
-        line3 = f"D:{down} U:{up}"
+                parts.append(f"{stats.gpu_temp:.0f}C")
+            line1 = " ".join(parts)
 
         draw.text((0, 0), line1, font=self._font, fill=255)
         draw.text((0, 13), line2, font=self._font, fill=255)
