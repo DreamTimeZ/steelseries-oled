@@ -61,7 +61,7 @@ examples:
   steelseries stats --font mono.ttf      Use custom font (HID backends only)
 
 displays:
-  CPU: current usage % and hottest core %
+  CPU: current usage %
   MEM: used / total in GB
   NET: upload/download speeds
 

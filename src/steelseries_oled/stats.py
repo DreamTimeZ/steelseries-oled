@@ -69,12 +69,79 @@ class _NetworkRateTracker:
         return up_rate, down_rate
 
 
+class _NvmlSession:
+    """Manage a single NVML session across the stats loop lifetime.
+
+    Keeps the NVIDIA driver connection open instead of calling
+    nvmlInit/nvmlShutdown on every iteration, which causes hangs.
+    """
+
+    def __init__(self) -> None:
+        self._available = False
+        self._handle: object = None
+
+        try:
+            from pynvml import (  # noqa: PLC0415
+                NVMLError,
+                nvmlDeviceGetCount,
+                nvmlDeviceGetHandleByIndex,
+                nvmlInit,
+            )
+        except ImportError:
+            return
+
+        try:
+            nvmlInit()
+            if nvmlDeviceGetCount() > 0:
+                self._handle = nvmlDeviceGetHandleByIndex(0)
+                self._available = True
+        except NVMLError:
+            pass
+
+    @property
+    def available(self) -> bool:
+        return self._available
+
+    def get_stats(self) -> tuple[float, float] | None:
+        """Get GPU utilization % and temperature. Returns None on failure."""
+        if not self._available:
+            return None
+
+        try:
+            from pynvml import (  # noqa: PLC0415
+                NVML_TEMPERATURE_GPU,
+                NVMLError,
+                nvmlDeviceGetTemperature,
+                nvmlDeviceGetUtilizationRates,
+            )
+        except ImportError:
+            return None
+
+        try:
+            util = nvmlDeviceGetUtilizationRates(self._handle)
+            temp = nvmlDeviceGetTemperature(self._handle, NVML_TEMPERATURE_GPU)
+            return float(util.gpu), float(temp)
+        except NVMLError as e:
+            logger.debug("GPU stats unavailable: %s", e)
+            return None
+
+    def close(self) -> None:
+        if self._available:
+            try:
+                from pynvml import nvmlShutdown  # noqa: PLC0415
+
+                nvmlShutdown()
+            except Exception:
+                pass
+            self._available = False
+            self._handle = None
+
+
 class _Capabilities:
     """Detected system capabilities."""
 
     def __init__(self) -> None:
         self.has_cpu_temp = self._detect_cpu_temp()
-        self.has_gpu = self._detect_gpu()
 
     def _detect_cpu_temp(self) -> bool:
         """Check if CPU temperature sensors are available."""
@@ -82,28 +149,6 @@ class _Capabilities:
             temps = psutil.sensors_temperatures()
             return bool(temps)
         except (AttributeError, OSError):
-            return False
-
-    def _detect_gpu(self) -> bool:
-        """Check if NVIDIA GPU is available via NVML."""
-        try:
-            from pynvml import (  # noqa: PLC0415
-                NVMLError,
-                nvmlDeviceGetCount,
-                nvmlInit,
-                nvmlShutdown,
-            )
-        except ImportError:
-            return False
-
-        try:
-            nvmlInit()
-            try:
-                count: int = nvmlDeviceGetCount()
-                return count > 0
-            finally:
-                nvmlShutdown()
-        except NVMLError:
             return False
 
 
@@ -127,44 +172,15 @@ def _get_cpu_temp() -> float | None:
     return None
 
 
-def _get_gpu_stats() -> tuple[float, float] | None:
-    """Get GPU load and temperature via NVML. Returns (percent, temp) or None."""
-    try:
-        from pynvml import (  # noqa: PLC0415
-            NVML_TEMPERATURE_GPU,
-            NVMLError,
-            nvmlDeviceGetHandleByIndex,
-            nvmlDeviceGetTemperature,
-            nvmlDeviceGetUtilizationRates,
-            nvmlInit,
-            nvmlShutdown,
-        )
-    except ImportError:
-        return None
-
-    try:
-        nvmlInit()
-        try:
-            handle = nvmlDeviceGetHandleByIndex(0)
-            util = nvmlDeviceGetUtilizationRates(handle)
-            temp = nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU)
-            return float(util.gpu), float(temp)
-        finally:
-            nvmlShutdown()
-    except NVMLError as e:
-        logger.debug("GPU stats unavailable: %s", e)
-        return None
-
-
 def _gather_stats(
     caps: _Capabilities,
     net_tracker: _NetworkRateTracker,
+    nvml: _NvmlSession,
 ) -> SystemStats:
     """Gather all available system statistics."""
-    # CPU - single call, derive both avg and max
+    # CPU
     per_core = psutil.cpu_percent(percpu=True)
     cpu_avg = sum(per_core) / len(per_core) if per_core else 0.0
-    cpu_max = max(per_core) if per_core else 0.0
 
     # Memory
     mem = psutil.virtual_memory()
@@ -177,17 +193,15 @@ def _gather_stats(
     # Optional: CPU temp
     cpu_temp = _get_cpu_temp() if caps.has_cpu_temp else None
 
-    # Optional: GPU
+    # Optional: GPU (uses persistent NVML session)
     gpu_percent = None
     gpu_temp = None
-    if caps.has_gpu:
-        gpu_stats = _get_gpu_stats()
-        if gpu_stats:
-            gpu_percent, gpu_temp = gpu_stats
+    gpu_stats = nvml.get_stats()
+    if gpu_stats:
+        gpu_percent, gpu_temp = gpu_stats
 
     return SystemStats(
         cpu_percent=cpu_avg,
-        cpu_max_core=cpu_max,
         mem_used_gb=mem_used_gb,
         mem_total_gb=mem_total_gb,
         net_up_bytes=net_up,
@@ -226,45 +240,51 @@ def display_stats(
         DeviceNotFoundError: If no compatible device is found and
             SteelSeries GG is not running.
     """
-    stats_backend = create_backend(backend, font_path=font_path)
+    stats_backend = create_backend(
+        backend, font_path=font_path, update_interval=update_interval
+    )
 
     # Detect capabilities and initialize trackers
     caps = _Capabilities()
     net_tracker = _NetworkRateTracker()
+    nvml = _NvmlSession()
 
-    print(f"Using {stats_backend.name} backend.")
-    if caps.has_gpu:
-        print("GPU detected (NVIDIA).")
-    if caps.has_cpu_temp:
-        print("CPU temperature sensors detected.")
-    print("Press Ctrl+C to exit.")
+    try:
+        print(f"Using {stats_backend.name} backend.")
+        if nvml.available:
+            print("GPU detected (NVIDIA).")
+        if caps.has_cpu_temp:
+            print("CPU temperature sensors detected.")
+        print("Press Ctrl+C to exit.")
 
-    # Prime the CPU percent measurement (first call always returns 0)
-    psutil.cpu_percent(percpu=True)
+        # Prime the CPU percent measurement (first call always returns 0)
+        psutil.cpu_percent(percpu=True)
 
-    consecutive_failures = 0
+        consecutive_failures = 0
 
-    with interruptible() as is_running, stats_backend:
-        while is_running():
-            try:
-                stats = _gather_stats(caps, net_tracker)
-                stats_backend.update_stats(stats)
-                consecutive_failures = 0
-            except DeviceCommunicationError as e:
-                consecutive_failures += 1
-                logger.warning(
-                    "Update failed (%d/%d): %s",
-                    consecutive_failures,
-                    MAX_CONSECUTIVE_FAILURES,
-                    e,
-                )
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    print(
-                        f"Device unresponsive after {MAX_CONSECUTIVE_FAILURES} "
-                        "consecutive failures. Exiting.",
+        with interruptible() as is_running, stats_backend:
+            while is_running():
+                try:
+                    stats = _gather_stats(caps, net_tracker, nvml)
+                    stats_backend.update_stats(stats)
+                    consecutive_failures = 0
+                except DeviceCommunicationError as e:
+                    consecutive_failures += 1
+                    logger.warning(
+                        "Update failed (%d/%d): %s",
+                        consecutive_failures,
+                        MAX_CONSECUTIVE_FAILURES,
+                        e,
                     )
-                    return False
-            time.sleep(update_interval)
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                        print(
+                            f"Device unresponsive after {MAX_CONSECUTIVE_FAILURES} "
+                            "consecutive failures. Exiting.",
+                        )
+                        return False
+                is_running.wait(update_interval)
+    finally:
+        nvml.close()
 
     print()
     return True

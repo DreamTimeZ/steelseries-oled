@@ -19,7 +19,7 @@ Usage:
 
     with backend:
         stats = SystemStats(
-            cpu_percent=50.0, cpu_max_core=55.0,
+            cpu_percent=50.0,
             mem_used_gb=12.0, mem_total_gb=32.0,
             net_up_bytes=1000.0, net_down_bytes=5000.0,
         )
@@ -70,6 +70,7 @@ def detect_best_backend() -> BackendType:
 def create_backend(
     backend_type: BackendType = BackendType.AUTO,
     font_path: Path | None = None,
+    update_interval: float = 1.0,
 ) -> StatsBackend:
     """Create a stats display backend.
 
@@ -77,6 +78,7 @@ def create_backend(
         backend_type: Type of backend to create. AUTO will detect
             the best available option.
         font_path: Path to custom font (HID backends only).
+        update_interval: Seconds between updates (used by GameSense timer).
 
     Returns:
         A StatsBackend instance ready for use as a context manager.
@@ -94,7 +96,7 @@ def create_backend(
         backend_type = detect_best_backend()
 
     if backend_type == BackendType.GAMESENSE:
-        return GameSenseBackend()
+        return GameSenseBackend(update_interval=update_interval)
     if backend_type == BackendType.HID:
         return HIDBitmapBackend(font_path=font_path)
     if backend_type == BackendType.HID_GEN3:
