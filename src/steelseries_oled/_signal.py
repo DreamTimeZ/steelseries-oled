@@ -2,32 +2,59 @@
 
 import signal
 import sys
+import threading
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Generator
+
+
+class InterruptibleState:
+    """Signal-aware state that supports interruptible waits.
+
+    Callable: returns True while running, False after interrupt.
+    Also provides wait() for interruptible sleeps.
+    """
+
+    __slots__ = ("_event",)
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+
+    def __call__(self) -> bool:
+        """Return True if still running, False if interrupted."""
+        return not self._event.is_set()
+
+    def stop(self) -> None:
+        """Signal that execution should stop."""
+        self._event.set()
+
+    def wait(self, timeout: float) -> None:
+        """Sleep for up to *timeout* seconds, returning early if interrupted."""
+        self._event.wait(timeout)
 
 
 @contextmanager
-def interruptible() -> Generator[Callable[[], bool]]:
+def interruptible() -> Generator[InterruptibleState]:
     """Context manager for handling interrupt signals gracefully.
 
-    Yields a callable that returns True while the process should continue
-    running, and False after SIGINT or SIGTERM is received.
+    Yields an InterruptibleState that is callable (returns True while
+    running) and supports interruptible waits via .wait(timeout).
 
     Example:
         with interruptible() as is_running:
             while is_running():
                 do_work()
+                is_running.wait(1.0)  # sleeps up to 1s, returns early on Ctrl+C
 
     Yields:
-        A callable returning True if still running, False if interrupted.
+        InterruptibleState instance.
     """
-    state = {"running": True}
+    state = InterruptibleState()
 
     def handler(signum: int, frame: object) -> None:
-        state["running"] = False
+        state.stop()
 
     # Install handlers, saving old ones
     old_sigint = signal.signal(signal.SIGINT, handler)
@@ -36,7 +63,7 @@ def interruptible() -> Generator[Callable[[], bool]]:
         old_sigterm = signal.signal(signal.SIGTERM, handler)
 
     try:
-        yield lambda: state["running"]
+        yield state
     finally:
         # Restore original handlers
         signal.signal(signal.SIGINT, old_sigint)
