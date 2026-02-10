@@ -103,6 +103,12 @@ Add your keyboard's Product ID (PID) to `SUPPORTED_PIDS` in `src/steelseries_ole
 
 ## Troubleshooting
 
+**Windows Defender interference:** The standalone exe may trigger extra scanning from Antimalware Service. Add a process exclusion in an elevated PowerShell:
+
+```powershell
+Add-MpPreference -ExclusionProcess "C:\path\to\steelseries.exe"
+```
+
 **GameSense timeout errors:** If `steelseries stats --backend gamesense` fails with a timeout error, restart SteelSeries GG completely. Check Task Manager (Windows) or Activity Monitor (macOS) for remaining SteelSeries processes and terminate them before restarting.
 
 ## License
