@@ -37,6 +37,33 @@ class SystemStats:
         return (self.mem_used_gb / self.mem_total_gb) * 100
 
 
+def build_stats_lines(stats: SystemStats) -> tuple[str, str, str]:
+    """Build the three display lines from system stats.
+
+    Returns:
+        (line1, line2, line3) ready for rendering or sending to GameSense.
+    """
+    # Line 1: CPU + GPU (adaptive)
+    line1_parts = [f"C:{stats.cpu_percent:3.0f}%"]
+    if stats.cpu_temp is not None:
+        line1_parts.append(f"{stats.cpu_temp:.0f}C")
+    if stats.gpu_percent is not None:
+        line1_parts.append(f"G:{stats.gpu_percent:.0f}%")
+        if stats.gpu_temp is not None:
+            line1_parts.append(f"{stats.gpu_temp:.0f}C")
+    line1 = " ".join(line1_parts)
+
+    # Line 2: RAM
+    line2 = f"RAM:{stats.mem_used_gb:.1f}/{stats.mem_total_gb:.0f}GB"
+
+    # Line 3: Network (download first - users care more about it)
+    up = format_rate(stats.net_up_bytes)
+    down = format_rate(stats.net_down_bytes)
+    line3 = f"D:{down} U:{up}"
+
+    return line1, line2, line3
+
+
 def format_rate(bytes_per_sec: float) -> str:
     """Format network rate for compact display (B/K/M).
 
